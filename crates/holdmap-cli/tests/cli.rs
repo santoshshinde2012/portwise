@@ -335,13 +335,21 @@ mod linux {
 
         let (code, out, err) = run(&["down", "--yes"]);
         assert_eq!(code, Some(0), "down failed: {out}{err}");
+        let mut released_port = None;
         for _ in 0..50 {
-            if TcpListener::bind(("127.0.0.1", port)).is_ok() {
+            if let Ok(listener) = TcpListener::bind(("127.0.0.1", port)) {
+                released_port = Some(listener);
                 break;
             }
             std::thread::sleep(Duration::from_millis(100));
         }
-        TcpListener::bind(("127.0.0.1", port)).expect("down freed the port");
+        // Keep the successful bind: dropping it and binding again lets a parallel test
+        // select this newly free ephemeral port between the two binds.
+        assert!(
+            released_port.is_some(),
+            "down did not free the port within 5s"
+        );
+        drop(released_port);
 
         let (code, _, _) = run(&["status", "--no-http"]);
         assert_eq!(code, Some(1), "status is non-zero when a service is down");
